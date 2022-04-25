@@ -279,7 +279,7 @@ def main():
 
     if args.save_obj:
         # select frame_ids you want to visualize
-        frame_ids = [0, 30, 60, 89]
+        frame_ids = [0, 8, 16]
         for frame_id in frame_ids:
             save_obj_model(args, opt_preds, frames, frame_id)
 
