@@ -1,0 +1,6 @@
+__pycache__
+*.pyc
+*.so
+*.o
+.python-version
+/v

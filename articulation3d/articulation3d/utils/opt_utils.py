@@ -705,9 +705,11 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
             pred_plane[:, 1] = - pred_plane[:, 1]
             pred_box_centers = p_instance.pred_boxes.get_centers()
 
+# TODO different part
             axis_tran = p_instance.pred_tran_axis
             tmp = torch.zeros(len(axis_tran),1)
             axis_tran = torch.cat((axis_tran, tmp), 1)
+
             pts = angle_offset_to_axis(axis_tran, pred_box_centers)
 
             verts = pred_mask.nonzero().flip(1)

@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+*.so
+*.o
+.python-version
+
+# project dirs
+video_data/
+articulation3d/output/
+articulation3d/output1/
+articulation3d/test_video/
