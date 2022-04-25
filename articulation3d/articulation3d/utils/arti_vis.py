@@ -371,6 +371,7 @@ def draw_pred(vis, p_instance, metadata, cls_name_map, conf_threshold=0.7):
         if metadata.thing_classes[p_instance.pred_classes[i]] == 'arti_rot':
             tmp_c = tuple([c/255 for c in metadata.thing_colors[p_instance.pred_classes[i]]])
             assigned_colors.append(tmp_c)
+            arrow_c = [0, 0, 1]
 
             w_box = p_instance.pred_boxes.tensor[i,2] - p_instance.pred_boxes.tensor[i,0]
             h_box = p_instance.pred_boxes.tensor[i,3] - p_instance.pred_boxes.tensor[i,1]
@@ -385,6 +386,7 @@ def draw_pred(vis, p_instance, metadata, cls_name_map, conf_threshold=0.7):
         elif metadata.thing_classes[p_instance.pred_classes[i]] == 'arti_tran':
             tmp_c = tuple([c/255 for c in metadata.thing_colors[p_instance.pred_classes[i]]])
             assigned_colors.append(tmp_c)
+            arrow_c = [1, 0, 0]
 
             tmp = torch.zeros(len(p_instance.pred_tran_axis),1)
             tran_tmp = torch.cat((p_instance.pred_tran_axis, tmp), 1)
@@ -399,13 +401,20 @@ def draw_pred(vis, p_instance, metadata, cls_name_map, conf_threshold=0.7):
             pts[0, [1,3]] = pts[0, [1,3]] + p_instance.pred_boxes.tensor[i, 1] - h_box / extension_rate / 2 * (extension_rate - 1)
             pt = pts[0]
 
-        vis.draw_arrow(x_data=[pt[0], pt[2]], y_data=[pt[1], pt[3]], color=tmp_c)
+        vis.draw_arrow(x_data=[pt[0], pt[2]], y_data=[pt[1], pt[3]], color=arrow_c)
 
     vis = get_pred_labeled(p_instance, conf_threshold, vis, assigned_colors=assigned_colors, cls_name_map=cls_name_map)
     return vis
 
 
+def draw_mask(mask, seg_pred):
+    mask = mask.cpu().permute(1,2,0)[:,:,:1].numpy()
+    zero_mask = np.zeros((seg_pred.shape[0], seg_pred.shape[1], seg_pred.shape[2]))
+    zero_mask[:,:,1] = zero_mask[:,:,1] + mask[:,:,0]*255
+    zero_mask = zero_mask.astype(np.uint8)
+    seg = cv2.addWeighted(seg_pred, 1, zero_mask, 0.5, 0)
 
+    return seg
 
 def render_img(output_dir, meshes, uv_maps):
     device = torch.device("cuda:0")

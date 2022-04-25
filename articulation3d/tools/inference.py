@@ -37,7 +37,7 @@ from articulation3d.config import get_planercnn_cfg_defaults
 from articulation3d.utils.vis import get_pcd, project2D, random_colors, get_single_image_mesh_arti
 from articulation3d.utils.mesh_utils import save_obj, get_camera_meshes, transform_meshes, rotate_mesh_for_webview
 from articulation3d.utils.opt_utils import track_planes, optimize_planes
-from articulation3d.utils.arti_vis import create_instances, PlaneRCNN_Branch, draw_pred, draw_gt, get_normal_map
+from articulation3d.utils.arti_vis import create_instances, PlaneRCNN_Branch, draw_pred, draw_gt, get_normal_map, draw_mask
 from articulation3d.utils.visualizer import ArtiVisualizer
 
 
@@ -185,8 +185,6 @@ def crop_image(im):
 
     return im
 
-
-
 def main():
     random.seed(2020)
     np.random.seed(2020)
@@ -231,6 +229,7 @@ def main():
     frames = []
     preds = []
     org_vis_list = []
+    seg_list = []
     for i, im in enumerate(tqdm(reader)):
         # h = int(480 * (720/640))
         # # import pdb
@@ -260,16 +259,27 @@ def main():
             vis = ArtiVisualizer(im[:, :, ::-1])
             seg_pred = draw_pred(vis, p_instance, metadata, cls_name_map, conf_threshold=args.conf_threshold)
 
+            # import pdb
+            # pdb.set_trace()
             # surface normal
             if len(p_instance.pred_boxes) == 0:
                 normal_vis = get_normal_map(torch.tensor([[1., 0, 0]]), torch.zeros(1, 480, 640))
+                seg = seg_pred
             else:
                 normal_vis = get_normal_map(p_instance.pred_planes, p_instance.pred_masks.cpu())
+
+            # get the frame with pred mask, bbox, axis
+            # mask = p_instance.pred_masks.cpu().permute(1,2,0)[:,:,:1].numpy()
+            # zero_mask = np.zeros((seg_pred.shape[0], seg_pred.shape[1], seg_pred.shape[2]))
+            # zero_mask[:,:,0] = zero_mask[:,:,0] + mask[:,:,0]*255
+            # zero_mask = zero_mask.astype(np.uint8)
+            # seg = cv2.addWeighted(seg_pred, 1, zero_mask, 0.5, 0)
+                seg = draw_mask(p_instance.pred_masks, seg_pred)
 
             # combine visualization and generate output
             combined_vis = np.concatenate((seg_pred, normal_vis), axis=1)
             org_vis_list.append(combined_vis)
-
+            seg_list.append(seg)
     if is_video:
         reader.close()
 
@@ -303,12 +313,15 @@ def main():
         # combine visualization and generate output
         combined_vis = np.concatenate((seg_pred, normal_vis, org_vis), axis=1)
         
+        seg = seg_list[i]
         
         if is_video:
             writer.append_data(combined_vis)
         else:
             write_path = f"{args.output}/output_{i}.png"
-            imageio.imwrite(write_path, combined_vis)
+            # imageio.imwrite(write_path, combined_vis)
+            # write_path = f"{args.output}/seg{i}.png"
+            imageio.imwrite(write_path, seg)
 
     if args.save_obj:
         # select frame_ids you want to visualize
