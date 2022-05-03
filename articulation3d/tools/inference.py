@@ -381,6 +381,23 @@ def transform_image(im):
 
 
 
+# crop the image to have the same scale as the default settings
+def crop_image(im):
+    height = im.shape[0]
+    width = im.shape[1]
+    center = np.array(im.shape[:2]) / 2
+    if height/width == 480/640:
+        return im
+    elif width>=height:
+        width_scale = int(640 * (height/480))
+        x = int(center[1] - width_scale/2)
+        im = im[:, x:x+width_scale, :]
+    else:
+        height_scale = int(480 * (width/640))
+        y = int(center[0] - height_scale/2)
+        im = im[y:y+height_scale, :, :]
+
+    return im
 
 def main():
     random.seed(2020)
@@ -426,7 +443,9 @@ def main():
     frames = []
     preds = []
     org_vis_list = []
+    seg_list = []
     for i, im in enumerate(tqdm(reader)):
+<<<<<<< HEAD
         # im = crop_image(im)
         im = pad_image(im)
 
@@ -438,6 +457,17 @@ def main():
 
         # import pdb
         # pdb.set_trace()
+=======
+        # h = int(480 * (720/640))
+        # # import pdb
+        # # pdb.set_trace()
+        # center = np.array(im.shape[:2]) / 2
+        # y = int(center[0] - h/2)
+        # im = im[im.shape[0]-h:, :, :]
+        # import pdb
+        # pdb.set_trace()
+        im = crop_image(im)
+>>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
         im = cv2.resize(im, (640, 480))
         frames.append(im)
         im = im[:, :, ::-1]
@@ -457,24 +487,42 @@ def main():
             vis = ArtiVisualizer(im[:, :, ::-1])
             seg_pred = draw_pred(vis, p_instance, metadata, cls_name_map, conf_threshold=args.conf_threshold)
 
+            # import pdb
+            # pdb.set_trace()
             # surface normal
             if len(p_instance.pred_boxes) == 0:
                 normal_vis = get_normal_map(torch.tensor([[1., 0, 0]]), torch.zeros(1, 480, 640))
+                seg = seg_pred
             else:
                 normal_vis = get_normal_map(p_instance.pred_planes, p_instance.pred_masks.cpu())
+
+            # get the frame with pred mask, bbox, axis
+            # mask = p_instance.pred_masks.cpu().permute(1,2,0)[:,:,:1].numpy()
+            # zero_mask = np.zeros((seg_pred.shape[0], seg_pred.shape[1], seg_pred.shape[2]))
+            # zero_mask[:,:,0] = zero_mask[:,:,0] + mask[:,:,0]*255
+            # zero_mask = zero_mask.astype(np.uint8)
+            # seg = cv2.addWeighted(seg_pred, 1, zero_mask, 0.5, 0)
+                seg = draw_mask(p_instance.pred_masks, seg_pred)
 
             # combine visualization and generate output
             combined_vis = np.concatenate((seg_pred, normal_vis), axis=1)
             org_vis_list.append(combined_vis)
-
+            seg_list.append(seg)
     if is_video:
         reader.close()
 
     # temporal optimization
     planes = track_planes(preds)
+<<<<<<< HEAD
     opt_preds, cluster, rsq, ref_idx = optimize_planes(preds, planes, '3dc', frames=frames)
     print("len of opt ======================")
     is_video = True
+=======
+    opt_preds = optimize_planes(preds, planes, '3dc', frames=frames)
+    
+
+    is_video = False
+>>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
     # video visualization in 2D
     if is_video:
         writer = imageio.get_writer(os.path.join(args.output, '{}.mp4'.format('output')), fps=fps)
@@ -495,19 +543,32 @@ def main():
             seg = seg_pred
         else:
             normal_vis = get_normal_map(p_instance.pred_planes, p_instance.pred_masks.cpu())
+<<<<<<< HEAD
 
             seg = draw_mask(p_instance.pred_masks, seg_pred)
+=======
+        # import pdb
+        # pdb.set_trace()
+>>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
         # combine visualization and generate output
 
         # combined_vis = np.concatenate((seg_pred, normal_vis, org_vis), axis=1)
 
         
+        seg = seg_list[i]
+        
         if is_video:
             writer.append_data(seg)
             write_path = f"{args.output}/output_{i}.png"
         else:
+<<<<<<< HEAD
             # imageio.imwrite(write_path, combined_vis)
             write_path = f"{args.output}/output_{i}.png"
+=======
+            write_path = f"{args.output}/output_{i}.png"
+            # imageio.imwrite(write_path, combined_vis)
+            # write_path = f"{args.output}/seg{i}.png"
+>>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
             imageio.imwrite(write_path, seg)
 
     if args.save_obj:

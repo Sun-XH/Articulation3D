@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+*.so
+*.o
+.python-version
+
+./video_data
