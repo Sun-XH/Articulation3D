@@ -74,8 +74,6 @@ def project2D(pcd,h=480,w=640,focal_length=517.97):
         proj = proj[:,:2] / proj[:,2][:,None]
         return proj 
 
-
-
     #proj is Nx2
     proj = (np.array(K)@(pcd.T)).T
     proj = proj[:,:2] / proj[:,2][:,None]
@@ -95,10 +93,10 @@ def get_pcd(verts, normal, offset, h=480, w=640, focal_length=517.97):
         [0, 0, 1]]
     K_inv = np.linalg.inv(np.array(K))
     homogeneous = np.hstack((verts, np.ones(len(verts)).reshape(-1,1)))
+
     ray = K_inv@homogeneous.T
     depth = offset / np.dot(normal, ray)
     pcd = depth.reshape(-1,1) * ray.T
-    #pdb.set_trace()
     return pcd
 
 
@@ -148,9 +146,14 @@ def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=48
     uv_maps = []
     imgs = []
 
+
+
     for planeI,(segm, normal, offset) in enumerate(zip(poly_segmentations, norms, offsets)):
         if len(segm) == 0:
             continue
+        
+        import pdb
+        pdb.set_trace()
 
         #####DF#####
         I = np.array(imageio.imread(img_file))

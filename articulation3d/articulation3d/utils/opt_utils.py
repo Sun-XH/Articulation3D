@@ -388,6 +388,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
         #min_mean_loss = 100000
 
         id_list = list(plane['ids'].keys())
+
         clusters = []
         for _ in range(5):
             if len(id_list) == 0:
@@ -495,9 +496,9 @@ def optimize_planes_3dc(preds, planes, frames=None):
                 'ious': cluster_ious
             }
             # print(cluster)
-
             clusters.append(cluster)
 
+            
         # now we have all clusters
         # determine the dominant cluster
         rsqs = []
@@ -505,6 +506,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
             if len(cluster['inliners']) < 5:
                 rsqs.append(0.0)
                 continue
+
             reg_results = linregress(
                 range(cluster['angles'].shape[0]), cluster['angles'])
             
@@ -512,6 +514,9 @@ def optimize_planes_3dc(preds, planes, frames=None):
             rsqs.append(rsq)
 
         rsqs = np.array(rsqs)
+
+        # import pdb
+        # pdb.set_trace()
 
         #if rsqs.max() < 0:  # impossible
         if rsqs.max() < 0.3:
@@ -639,6 +644,8 @@ def optimize_planes_3dc(preds, planes, frames=None):
             if idx not in plane['ids']:
                 continue
             box_id = plane['ids'][idx]
+            # import pdb
+            # pdb.set_trace()
             if not plane['has_rot']:
                 chosen[box_id] = False
                 continue
@@ -650,16 +657,17 @@ def optimize_planes_3dc(preds, planes, frames=None):
             )
             p_instance.pred_rot_axis[box_id] = std_axis[0, :3]
 
-            #if plane['reg_normals'][idx] is not None:
-            #    p_instance.pred_planes[box_id] = plane['reg_normals'][idx]
-            continue
+            if plane['reg_normals'][idx] is not None:
+               p_instance.pred_planes[box_id] = plane['reg_normals'][idx]
+            #    import pdb
+            #    pdb.set_trace()
             if plane['reg_masks'][idx] is not None:
                 p_instance.pred_masks[box_id] = plane['reg_masks'][idx]
                 # bbox
-                #mask = GenericMask(plane['reg_masks'][idx].numpy(), 480, 640)
-                #box_tensor = p_instance.pred_boxes.tensor
-                #box_tensor[box_id] = torch.FloatTensor(mask.bbox())
-                #p_instance.pred_boxes = Boxes(box_tensor)
+                mask = GenericMask(plane['reg_masks'][idx].numpy(), 480, 640)
+                box_tensor = p_instance.pred_boxes.tensor
+                box_tensor[box_id] = torch.FloatTensor(mask.bbox())
+                p_instance.pred_boxes = Boxes(box_tensor)
 
         chosen = np.array(chosen, dtype=bool)
         no_chosen = np.logical_not(chosen)
@@ -668,7 +676,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
         new_instance = Instances(p_instance.image_size)
         scores = np.copy(p_instance.scores)
         scores[no_chosen] = scores[no_chosen] * 0.6
-        #scores[chosen] = - (scores[chosen] - 1) ** 2 + 1
+        scores[chosen] = - (scores[chosen] - 1) ** 2 + 1
         new_instance.scores = scores
         new_instance.pred_boxes = p_instance.pred_boxes
         new_instance.pred_planes = p_instance.pred_planes
@@ -679,8 +687,21 @@ def optimize_planes_3dc(preds, planes, frames=None):
 
         opt_preds.append(new_instance)
 
-    return opt_preds
-
+    # output_value = {
+    #         'select_frame_id' : cluster['center_id'],
+    #         'inliner_id' : cluster['inliners'],
+    #         'angle' : cluster['angles'],
+    #         'ious' : cluster['ious'],
+    #         'rsqs' : rsqs,
+    #         'final_selection' : select_idx
+    #     }
+    if planes != []:
+        return opt_preds, clusters, rsqs, select_idx
+    else:
+        clusters = []
+        rsqs = []
+        select_idx = []
+        return opt_preds, clusters, rsqs, select_idx
 
 def optimize_planes_3d_trans(preds, planes, frames=None):
     """
@@ -703,7 +724,7 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
             pred_plane = p_instance.pred_planes[box_id:(box_id + 1)].clone()
             pred_plane[:, [1, 2]] = pred_plane[:, [2, 1]]
             pred_plane[:, 1] = - pred_plane[:, 1]
-            pred_box_centers = p_instance.pred_boxes.get_centers()
+            pred_box_centers = p_instance.pred_boxes.get_centers() 
 
             axis_tran = p_instance.pred_tran_axis
             tmp = torch.zeros(len(axis_tran),1)
@@ -748,6 +769,7 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
                 proj_masks.append(proj_mask)
 
             proj_masks = torch.cat(proj_masks)
+
 
             # all ious
             #ious = []
@@ -955,8 +977,15 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
         new_instance.pred_classes = p_instance.pred_classes
 
         opt_preds.append(new_instance)
+    
 
-    return opt_preds
+    if planes != []:
+        return opt_preds, clusters, rsqs, select_idx
+    else:
+        clusters = []
+        rsqs = []
+        select_idx = []
+        return opt_preds, clusters, rsqs, select_idx
 
 
 def optimize_planes(preds, planes, method, frames=None):
@@ -966,10 +995,22 @@ def optimize_planes(preds, planes, method, frames=None):
         return optimize_planes_3d(preds, planes)
     elif method == '3dc':
         #check_monotonic(preds, planes['rot'], 'debug', frames=frames)
-        opt_preds = optimize_planes_3d_trans(preds, planes['trans'], frames=frames)
-        opt_preds_2 = optimize_planes_3dc(opt_preds, planes['rot'], frames=frames)
+        opt_preds, clusters_trans, rsqs_trans, select_idx_trans = optimize_planes_3d_trans(preds, planes['trans'], frames=frames)
+        opt_preds_2, clusters_rot, rsqs_rot, select_idx_rot = optimize_planes_3dc(opt_preds, planes['rot'], frames=frames)
         #pdb.set_trace()
-        return opt_preds_2
+        cluster = {
+            'trans': clusters_trans,
+            'rot' : clusters_rot
+        }
+        rsq = {
+            'trans': rsqs_trans,
+            'rot' : rsqs_rot
+        }
+        ref_idx = {
+            'trans': select_idx_trans,
+            'rot' : select_idx_rot
+        }
+        return opt_preds_2, cluster, rsq, ref_idx
     else:
         raise NotImplementedError
 

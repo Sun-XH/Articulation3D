@@ -4,4 +4,8 @@ __pycache__
 *.o
 .python-version
 
-**/
+video_data/
+test_video/
+exps/
+output/
+dataset/

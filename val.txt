@@ -1,0 +1,4 @@
+refrigerator/b005-0001
+microwave/b004-0001
+trashcan/b006-0001
+oven/b009-0001

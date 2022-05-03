@@ -404,7 +404,14 @@ def draw_pred(vis, p_instance, metadata, cls_name_map, conf_threshold=0.7):
     vis = get_pred_labeled(p_instance, conf_threshold, vis, assigned_colors=assigned_colors, cls_name_map=cls_name_map)
     return vis
 
+def draw_mask(mask, seg_pred):
+    mask = mask.cpu().permute(1,2,0)[:,:,:1].numpy()
+    zero_mask = np.zeros((seg_pred.shape[0], seg_pred.shape[1], seg_pred.shape[2]))
+    zero_mask[:,:,1] = zero_mask[:,:,1] + mask[:,:,0]*255
+    zero_mask = zero_mask.astype(np.uint8)
+    seg = cv2.addWeighted(seg_pred, 1, zero_mask, 0.5, 0)
 
+    return seg
 
 
 def render_img(output_dir, meshes, uv_maps):
