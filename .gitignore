@@ -15,3 +15,6 @@ articulation3d/output/
 articulation3d/output1/
 articulation3d/test_video/
 .history/
+.idea/
+.vscode/
+

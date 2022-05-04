@@ -445,30 +445,17 @@ def main():
     org_vis_list = []
     seg_list = []
     for i, im in enumerate(tqdm(reader)):
-<<<<<<< HEAD
         # im = crop_image(im)
-        im = pad_image(im)
+        # im = pad_image(im)
 
-
-        # height = im.shape[0]
-        # width = im.shape[1]
-        # im = cv2.resize(im,(int(width*(517.97/983)), int(height*(517.97/983))))
-        # im = transform_image(im)
-
-        # import pdb
-        # pdb.set_trace()
-=======
-        # h = int(480 * (720/640))
-        # # import pdb
-        # # pdb.set_trace()
-        # center = np.array(im.shape[:2]) / 2
-        # y = int(center[0] - h/2)
-        # im = im[im.shape[0]-h:, :, :]
-        # import pdb
-        # pdb.set_trace()
-        im = crop_image(im)
->>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
-        im = cv2.resize(im, (640, 480))
+        height = im.shape[0]
+        width = im.shape[1]
+        im = cv2.resize(im,(int(width*(517.97/983)), int(height*(517.97/983))))
+        import pdb
+        pdb.set_trace()
+        im = transform_image(im)
+        
+        # im = cv2.resize(im, (640, 480))
         frames.append(im)
         im = im[:, :, ::-1]
         pred = model.inference(im)
@@ -513,16 +500,9 @@ def main():
 
     # temporal optimization
     planes = track_planes(preds)
-<<<<<<< HEAD
     opt_preds, cluster, rsq, ref_idx = optimize_planes(preds, planes, '3dc', frames=frames)
     print("len of opt ======================")
     is_video = True
-=======
-    opt_preds = optimize_planes(preds, planes, '3dc', frames=frames)
-    
-
-    is_video = False
->>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
     # video visualization in 2D
     if is_video:
         writer = imageio.get_writer(os.path.join(args.output, '{}.mp4'.format('output')), fps=fps)
@@ -543,13 +523,8 @@ def main():
             seg = seg_pred
         else:
             normal_vis = get_normal_map(p_instance.pred_planes, p_instance.pred_masks.cpu())
-<<<<<<< HEAD
 
             seg = draw_mask(p_instance.pred_masks, seg_pred)
-=======
-        # import pdb
-        # pdb.set_trace()
->>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
         # combine visualization and generate output
 
         # combined_vis = np.concatenate((seg_pred, normal_vis, org_vis), axis=1)
@@ -561,14 +536,8 @@ def main():
             writer.append_data(seg)
             write_path = f"{args.output}/output_{i}.png"
         else:
-<<<<<<< HEAD
             # imageio.imwrite(write_path, combined_vis)
             write_path = f"{args.output}/output_{i}.png"
-=======
-            write_path = f"{args.output}/output_{i}.png"
-            # imageio.imwrite(write_path, combined_vis)
-            # write_path = f"{args.output}/seg{i}.png"
->>>>>>> 3314554eac3803e7f4d4c861e2543805655ecb08
             imageio.imwrite(write_path, seg)
 
     if args.save_obj:

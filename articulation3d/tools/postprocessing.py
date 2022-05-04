@@ -378,7 +378,22 @@ def transform_image(im):
     return im
 
 
+def save_metric_output(args, opt_preds, frames, frame_ids):
+    p_instance = preds[frame_id]
+    if p_instance.scores.shape[0] == 0:
+        print("no prediction!")
+        return
 
+    box_id = p_instance.scores.argmax()
+    vis = ArtiVisualizer(frames[frame_id])
+    im = frames[frame_id]
+    
+    # computing the rotation axis
+    pred_mask = p_instance.pred_masks[box_id]
+    pred_plane = p_instance.pred_planes[box_id:(box_id + 1)].clone()
+    pred_plane[:, [1,2]] = pred_plane[:, [2, 1]]
+    pred_plane[:, 1] = - pred_plane[:, 1]
+    pred_box_centers = p_instance.pred_boxes.get_centers()
 
 
 # crop the image to have the same scale as the default settings

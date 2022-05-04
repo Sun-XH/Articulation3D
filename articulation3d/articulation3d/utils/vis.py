@@ -59,7 +59,7 @@ def precompute_K_inv_dot_xy_1(h=480, w=640):
         return K_inv_dot_xy_1
 
 
-def project2D(pcd,h=480,w=640,focal_length=517.97):
+def project2D(pcd,h=480,w=640,focal_length=368.635):
     #pcd is Nx3
     offset_x = w/2
     offset_y = h/2
@@ -81,7 +81,7 @@ def project2D(pcd,h=480,w=640,focal_length=517.97):
 
 
     
-def get_pcd(verts, normal, offset, h=480, w=640, focal_length=517.97):
+def get_pcd(verts, normal, offset, h=480, w=640, focal_length=368.635):
     """
     convert 2d verts to 3d point cloud based on plane normal and offset
     depth = offset / n \dot K^{-1}q
@@ -397,7 +397,7 @@ def get_single_image_mesh_arti(plane_params, segmentations, img, height=480, wid
 
 
 """
-def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=480, width=640, focal_length=517.97, webvis=False, reduce_size=True):
+def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=480, width=640, focal_length=368.635, webvis=False, reduce_size=True):
     plane_params = np.array(plane_params)
     offsets = np.linalg.norm(plane_params, ord=2, axis=1)
     norms = plane_params / offsets.reshape(-1,1)
@@ -539,7 +539,7 @@ def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=48
 """
 
 
-def get_single_image_mesh(plane_params, segmentations, img_file, height=480, width=640, focal_length=517.97, webvis=False, reduce_size=True):
+def get_single_image_mesh(plane_params, segmentations, img_file, height=480, width=640, focal_length=368.635, webvis=False, reduce_size=True):
     plane_params = np.array(plane_params)
     offsets = np.linalg.norm(plane_params, ord=2, axis=1)
     norms = plane_params/offsets.reshape(-1,1)
