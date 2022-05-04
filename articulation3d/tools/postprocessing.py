@@ -66,6 +66,7 @@ def save_obj_model(args, preds, frames, frame_id, axis_dir='l'):
     offset = torch.norm(pred_plane, p=2)
     verts_axis = pts[box_id].reshape(-1, 2)
     verts_axis_3d = get_pcd(verts_axis, normal, offset)
+
     if args.webvis:
         # 3d transformation for model-viewer
         verts_axis_3d = torch.tensor((np.array([[-1,0,0], [0,1,0], [0,0,-1]])@np.array([[-1,0,0],[0,-1,0],[0,0,1]])@verts_axis_3d.numpy().T).T)
@@ -203,6 +204,7 @@ def save_obj_model_single(args, preds, frames, frame_id, axis_dir='l'):
     offset = torch.norm(pred_plane, p=2)
     verts_axis = pts[box_id].reshape(-1, 2)
     verts_axis_3d = get_pcd(verts_axis, normal, offset)
+    
     if args.webvis:
         # 3d transformation for model-viewer
         verts_axis_3d = torch.tensor((np.array([[-1,0,0], [0,1,0], [0,0,-1]])@np.array([[-1,0,0],[0,-1,0],[0,0,1]])@verts_axis_3d.numpy().T).T)
@@ -350,6 +352,52 @@ def pad_image(im):
 
     return im
 
+def transform_image(im):
+    height = im.shape[0]
+    width = im.shape[1]
+    center = np.array(im.shape[:2]) / 2
+    if height > 480:
+        y = int(center[0] - 480/2)
+        im = im[y:y+480, :, :]
+    elif height < 480:
+        pad = int((480 - height)/2)
+        if (480 - height)%2 == 0:
+            im = cv2.copyMakeBorder(im.copy(),pad,pad,0,0,cv2.BORDER_CONSTANT,value=0)
+        else:
+            im = cv2.copyMakeBorder(im.copy(),pad,pad+1,0,0,cv2.BORDER_CONSTANT,value=0)
+    if width > 640:
+        x = int(center[1] - 640/2)
+        im = im[:, x:x+640, :]
+    elif width < 640:
+        pad = int((640-width)/2)
+        if (640-width)%2 ==0:
+            im= cv2.copyMakeBorder(im.copy(),0,0,pad,pad,cv2.BORDER_CONSTANT,value=0)
+        else:
+            im= cv2.copyMakeBorder(im.copy(),0,0,pad,pad+1,cv2.BORDER_CONSTANT,value=0)
+
+    return im
+
+
+
+
+
+# crop the image to have the same scale as the default settings
+def crop_image(im):
+    height = im.shape[0]
+    width = im.shape[1]
+    center = np.array(im.shape[:2]) / 2
+    if height/width == 480/640:
+        return im
+    elif width>=height:
+        width_scale = int(640 * (height/480))
+        x = int(center[1] - width_scale/2)
+        im = im[:, x:x+width_scale, :]
+    else:
+        height_scale = int(480 * (width/640))
+        y = int(center[0] - height_scale/2)
+        im = im[y:y+height_scale, :, :]
+
+    return im
 
 def main():
     random.seed(2020)
@@ -395,10 +443,19 @@ def main():
     frames = []
     preds = []
     org_vis_list = []
+    seg_list = []
     for i, im in enumerate(tqdm(reader)):
-        im = crop_image(im)
+        # im = crop_image(im)
         # im = pad_image(im)
-        im = cv2.resize(im, (640, 480))
+
+        height = im.shape[0]
+        width = im.shape[1]
+        im = cv2.resize(im,(int(width*(517.97/983)), int(height*(517.97/983))))
+        import pdb
+        pdb.set_trace()
+        im = transform_image(im)
+        
+        # im = cv2.resize(im, (640, 480))
         frames.append(im)
         im = im[:, :, ::-1]
         pred = model.inference(im)
@@ -417,25 +474,34 @@ def main():
             vis = ArtiVisualizer(im[:, :, ::-1])
             seg_pred = draw_pred(vis, p_instance, metadata, cls_name_map, conf_threshold=args.conf_threshold)
 
+            # import pdb
+            # pdb.set_trace()
             # surface normal
             if len(p_instance.pred_boxes) == 0:
                 normal_vis = get_normal_map(torch.tensor([[1., 0, 0]]), torch.zeros(1, 480, 640))
+                seg = seg_pred
             else:
                 normal_vis = get_normal_map(p_instance.pred_planes, p_instance.pred_masks.cpu())
+
+            # get the frame with pred mask, bbox, axis
+            # mask = p_instance.pred_masks.cpu().permute(1,2,0)[:,:,:1].numpy()
+            # zero_mask = np.zeros((seg_pred.shape[0], seg_pred.shape[1], seg_pred.shape[2]))
+            # zero_mask[:,:,0] = zero_mask[:,:,0] + mask[:,:,0]*255
+            # zero_mask = zero_mask.astype(np.uint8)
+            # seg = cv2.addWeighted(seg_pred, 1, zero_mask, 0.5, 0)
+                seg = draw_mask(p_instance.pred_masks, seg_pred)
 
             # combine visualization and generate output
             combined_vis = np.concatenate((seg_pred, normal_vis), axis=1)
             org_vis_list.append(combined_vis)
-
+            seg_list.append(seg)
     if is_video:
         reader.close()
 
     # temporal optimization
     planes = track_planes(preds)
-    opt_preds, select_idx = optimize_planes(preds, planes, '3dc', frames=frames)
-
-    # import pdb
-    # pdb.set_trace()
+    opt_preds, cluster, rsq, ref_idx = optimize_planes(preds, planes, '3dc', frames=frames)
+    print("len of opt ======================")
     is_video = True
     # video visualization in 2D
     if is_video:
@@ -464,8 +530,10 @@ def main():
         # combined_vis = np.concatenate((seg_pred, normal_vis, org_vis), axis=1)
 
         
+        seg = seg_list[i]
+        
         if is_video:
-            writer.append_data(seg_pred)
+            writer.append_data(seg)
             write_path = f"{args.output}/output_{i}.png"
         else:
             # imageio.imwrite(write_path, combined_vis)
@@ -474,10 +542,26 @@ def main():
 
     if args.save_obj:
         # select frame_ids you want to visualize
-        frame_ids = [0, 30, 60]
+        # frame_ids = [0, 30, 60, 90]
+        if ref_idx['trans'] != []:
+            frame_ids = ref_idx['trans']
+        else:
+            frame_ids = ref_idx['rot']
+        print("<================Cluster Info====================>")
+        print(cluster)
+        print("<================RSQ Value====================>")
+        print(rsq)
+        print("<================Reference ID====================>")
+        print(ref_idx)
         # save_obj_model_single(args, opt_preds, frames, select_idx)
-        for frame_id in frame_ids:
-            save_obj_model_single(args, opt_preds, frames, frame_id)
+        # import pdb
+        # pdb.set_trace()
+        # for frame_id in frame_ids:
+        #     save_obj_model_single(args, opt_preds, frames, frame_id)
+        # frame_ids = 22
+        save_obj_model_single(args, opt_preds, frames, frame_ids)
+        # save_obj_model(args, opt_preds, frames, frame_ids)
+        
 
 
 if __name__ == "__main__":
