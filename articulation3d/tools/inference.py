@@ -106,7 +106,8 @@ def save_obj_model(args, preds, frames, frame_id, axis_dir='l'):
     mesh, uv_maps = get_single_image_mesh_arti(plane_params, segmentations, img=im, height=height, width=width, webvis=args.webvis, reduce_size=reduce_size)
     mesh = mesh.cuda()
     mesh_pcd = mesh.verts_list()[0].clone()
-    
+
+
     # bitmask pcd
     pcd = get_pcd(verts, normal, offset)#, focal_length)
     pcd = pcd.float().cuda()
@@ -244,7 +245,7 @@ def save_obj_model_single(args, preds, frames, frame_id, axis_dir='l'):
     mesh, uv_maps = get_single_image_mesh_arti(plane_params, segmentations, img=im, height=height, width=width, webvis=args.webvis, reduce_size=reduce_size)
     mesh = mesh.cuda()
     mesh_pcd = mesh.verts_list()[0].clone()
-    
+
     # bitmask pcd
     pcd = get_pcd(verts, normal, offset)#, focal_length)
     pcd = pcd.float().cuda()
@@ -380,25 +381,6 @@ def transform_image(im):
 
 
 
-
-# crop the image to have the same scale as the default settings
-def crop_image(im):
-    height = im.shape[0]
-    width = im.shape[1]
-    center = np.array(im.shape[:2]) / 2
-    if height/width == 480/640:
-        return im
-    elif width>=height:
-        width_scale = int(640 * (height/480))
-        x = int(center[1] - width_scale/2)
-        im = im[:, x:x+width_scale, :]
-    else:
-        height_scale = int(480 * (width/640))
-        y = int(center[0] - height_scale/2)
-        im = im[y:y+height_scale, :, :]
-
-    return im
-
 def main():
     random.seed(2020)
     np.random.seed(2020)
@@ -445,17 +427,14 @@ def main():
     org_vis_list = []
     seg_list = []
     for i, im in enumerate(tqdm(reader)):
-        # im = crop_image(im)
+        im = crop_image(im)
         # im = pad_image(im)
-
-        height = im.shape[0]
-        width = im.shape[1]
-        im = cv2.resize(im,(int(width*(517.97/983)), int(height*(517.97/983))))
-        import pdb
-        pdb.set_trace()
-        im = transform_image(im)
+        # height = im.shape[0]
+        # width = im.shape[1]
+        # im = cv2.resize(im,(int(width*(517.97/983)), int(height*(517.97/983))))
+        # im = transform_image(im)
         
-        # im = cv2.resize(im, (640, 480))
+        im = cv2.resize(im, (640, 480))
         frames.append(im)
         im = im[:, :, ::-1]
         pred = model.inference(im)
@@ -501,7 +480,7 @@ def main():
     # temporal optimization
     planes = track_planes(preds)
     opt_preds, cluster, rsq, ref_idx = optimize_planes(preds, planes, '3dc', frames=frames)
-    print("len of opt ======================")
+
     is_video = True
     # video visualization in 2D
     if is_video:
@@ -542,7 +521,7 @@ def main():
 
     if args.save_obj:
         # select frame_ids you want to visualize
-        # frame_ids = [0, 30, 60, 90]
+
         if ref_idx['trans'] != []:
             frame_ids = ref_idx['trans']
         else:
@@ -556,11 +535,12 @@ def main():
         # save_obj_model_single(args, opt_preds, frames, select_idx)
         # import pdb
         # pdb.set_trace()
-        # for frame_id in frame_ids:
-        #     save_obj_model_single(args, opt_preds, frames, frame_id)
+        frame_ids = np.arange(len(frames))
+        for frame_id in frame_ids:
+            save_obj_model_single(args, opt_preds, frames, frame_id)
         # frame_ids = 22
-        save_obj_model_single(args, opt_preds, frames, frame_ids)
-        # save_obj_model(args, opt_preds, frames, frame_ids)
+        
+        # save_obj_model_single(args, opt_preds, frames, frame_ids)
         
 
 
