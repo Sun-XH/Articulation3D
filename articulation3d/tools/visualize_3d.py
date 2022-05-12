@@ -100,14 +100,14 @@ def caculate_align_mat(pVec_Arr):
 if __name__ == "__main__":
 
     
-    obj_mesh_1 = o3d.io.read_triangle_mesh("test_video/ref_19_meter.obj", enable_post_processing=True)
+    obj_mesh_1 = o3d.io.read_triangle_mesh("/localhome/xsa55/Xiaohao/Articulation3D/articulation3d/output/test_split_fridge/frame_0005/arti_pred.obj")
     obj_mesh_1.compute_vertex_normals()
 
-    plane_mesh_1 = o3d.io.read_triangle_mesh("test_video/output3d_pad_test/frame_0019/arti_pred.obj", enable_post_processing=True)
-    plane_mesh_1.compute_vertex_normals()
+    # plane_mesh_1 = o3d.io.read_triangle_mesh("test_video/output3d_pad_test/frame_0019/arti_pred.obj", enable_post_processing=True)
+    # plane_mesh_1.compute_vertex_normals()
 
-    plane_mesh_2 = o3d.io.read_triangle_mesh("test_video/_Archive/output3d_test_trans_517/frame_0018/arti_pred.obj", enable_post_processing=True)
-    plane_mesh_2.compute_vertex_normals()
+    # plane_mesh_2 = o3d.io.read_triangle_mesh("test_video/_Archive/output3d_test_trans_517/frame_0018/arti_pred.obj", enable_post_processing=True)
+    # plane_mesh_2.compute_vertex_normals()
 
     # hum_mesh_opt = o3d.io.read_triangle_mesh("../results/refrigerator_b005-0001/00009_smpl.obj")
     # T = np.eye(4)
@@ -156,5 +156,5 @@ if __name__ == "__main__":
     camera = getCamera(np.eye(4), 983, 983, 720/2, 1280/2)
 
     # Final Visualization
-    o3d.visualization.draw_geometries([obj_mesh_1, plane_mesh_1, plane_mesh_2, world] + camera)
+    o3d.visualization.draw_geometries([obj_mesh_1, world] + camera)
     # o3d.visualization.draw_geometries([obj_mesh])

@@ -37,7 +37,7 @@ from articulation3d.evaluation import ArtiEvaluator
 from articulation3d.config import get_planercnn_cfg_defaults
 from articulation3d.utils.vis import get_pcd, project2D, random_colors, get_single_image_mesh_arti
 from articulation3d.utils.mesh_utils import save_obj, get_camera_meshes, transform_meshes, rotate_mesh_for_webview
-from articulation3d.utils.opt_utils import track_planes, optimize_planes
+from articulation3d.utils.split_opt_utils import track_planes, optimize_planes
 from articulation3d.utils.arti_vis import create_instances, PlaneRCNN_Branch, draw_pred, draw_gt, get_normal_map, draw_mask
 from articulation3d.utils.visualizer import ArtiVisualizer
 
@@ -427,14 +427,14 @@ def main():
     org_vis_list = []
     seg_list = []
     for i, im in enumerate(tqdm(reader)):
-        im = crop_image(im)
-        # im = pad_image(im)
-        # height = im.shape[0]
-        # width = im.shape[1]
-        # im = cv2.resize(im,(int(width*(517.97/983)), int(height*(517.97/983))))
-        # im = transform_image(im)
+        # im = crop_image(im)
+        im = pad_image(im)
+        height = im.shape[0]
+        width = im.shape[1]
+        im = cv2.resize(im,(int(width*(517.97/983)), int(height*(517.97/983))))
+        im = transform_image(im)
         
-        im = cv2.resize(im, (640, 480))
+        # im = cv2.resize(im, (640, 480))
         frames.append(im)
         im = im[:, :, ::-1]
         pred = model.inference(im)

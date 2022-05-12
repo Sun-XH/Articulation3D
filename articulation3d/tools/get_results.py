@@ -12,6 +12,7 @@ import pickle
 import imageio
 import random
 import math
+import pdb
 from glob import glob
 
 import pycocotools.mask as mask_util
@@ -41,44 +42,6 @@ from articulation3d.utils.split_opt_utils import track_planes, optimize_planes
 from articulation3d.utils.arti_vis import create_instances, PlaneRCNN_Branch, draw_pred, draw_gt, get_normal_map, draw_mask
 from articulation3d.utils.visualizer import ArtiVisualizer
 
-
-# crop the image to have the same scale as the default settings
-def crop_image(im):
-    height = im.shape[0]
-    width = im.shape[1]
-    center = np.array(im.shape[:2]) / 2
-    if height/width == 480/640:
-        return im
-    elif width >= height:
-        width_scale = int(640 * (height/480))
-        x = int(center[1] - width_scale/2)
-        im = im[:, x:x+width_scale, :]
-    else:
-        height_scale = int(480 * (width/640))
-        y = int(center[0] - height_scale/2)
-        im = im[y:y+height_scale, :, :]
-        # im = im[height-height_scale:, :, :]
-
-    return im
-
-
-def pad_image(im):
-    height = im.shape[0]
-    width = im.shape[1]
-    if height/width == 480/640:
-        return im
-    elif height/width > 480/640:
-        pad = int((height/480 * 640 - width)/2)
-        im = cv2.copyMakeBorder(im.copy(), 0, 0, pad,
-                                pad, cv2.BORDER_CONSTANT, value=0)
-    else:
-        pad = int((width/640 * 480 - height)/2)
-        im = cv2.copyMakeBorder(im.copy(), pad, pad, 0,
-                                0, cv2.BORDER_CONSTANT, value=0)
-
-    return im
-
-
 def transform_image(im):
     height = im.shape[0]
     width = im.shape[1]
@@ -107,7 +70,6 @@ def transform_image(im):
                 im.copy(), 0, 0, pad, pad+1, cv2.BORDER_CONSTANT, value=0)
 
     return im
-
 
 def save_metric_output(args, preds, frames, frame_id, motion_type, axis_dir='l'):
     p_instance = preds[frame_id]
@@ -155,53 +117,20 @@ def save_metric_output(args, preds, frames, frame_id, motion_type, axis_dir='l')
     os.mkdir(output_dir)
     basename = 'arti'
     save_obj(output_dir, basename+'_pred', mesh, uv_maps=uv_maps)
-
+    
     motion_para = {
         'motion_type': motion_type,
         'motion_axis': dir_vec.cpu().numpy().tolist(),
         'motion_origin': verts_axis_3d[0].cpu().numpy().tolist(),
+        # 'motion_state': p_instance.angle
         'motion_state': []
     }
-
     with open(f'{output_dir}/motion_para.json', 'w') as fp:
         json.dump(motion_para, fp)
 
 
-def main():
-    random.seed(2020)
-    np.random.seed(2020)
-
-    # command line arguments
-    parser = argparse.ArgumentParser(
-        description="A script that generates results of articulation prediction."
-    )
-    parser.add_argument("--config", required=True, help="config/config.yaml")
-    parser.add_argument("--input", required=True, help="input video file")
-    parser.add_argument("--output", required=True, help="output directory")
-    parser.add_argument('--save-obj', action='store_true')
-    parser.add_argument('--webvis', action='store_true')
-    parser.add_argument("--conf-threshold", default=0.7,
-                        type=float, help="confidence threshold")
-    args = parser.parse_args()
-
-    # create output directory
-    os.makedirs(args.output, exist_ok=True)
-
-    # setup logger
-    logger = setup_logger()
-
-    # load model
-    cfg = get_cfg()
-    get_planercnn_cfg_defaults(cfg)
-    cfg.merge_from_file(args.config)
-    model = PlaneRCNN_Branch(cfg)
-    shortened_class_names = {'arti_rot': 'R', 'arti_tran': 'T'}
-    metadata = MetadataCatalog.get('arti_train')
-    cls_name_map = [shortened_class_names[cls]
-                    for cls in metadata.thing_classes]
-
-    # read video and run per-frame inference
-    video_path = args.input
+def get_single_video_results(args, path, model, metadata, cls_name_map):
+    video_path = path
     is_video = True
     if video_path.endswith('mp4'):
         reader = imageio.get_reader(video_path)
@@ -215,16 +144,13 @@ def main():
     org_vis_list = []
     seg_list = []
     for i, im in enumerate(tqdm(reader)):
-        # im = crop_image(im)
-        # im = pad_image(im)
-
         height = im.shape[0]
         width = im.shape[1]
         im = cv2.resize(im, (int(width*(517.97/983)),
                         int(height*(517.97/983))))
         im = transform_image(im)
+        # pdb.set_trace()
 
-        # im = cv2.resize(im, (640, 480))
         frames.append(im)
         im = im[:, :, ::-1]
         pred = model.inference(im)
@@ -236,6 +162,7 @@ def main():
             pred_tran_axis=pred_dict['pred_tran_axis'],
             conf_threshold=args.conf_threshold,
         )
+
         preds.append(p_instance)
 
         # visualization without optmization
@@ -254,7 +181,6 @@ def main():
             else:
                 normal_vis = get_normal_map(
                     p_instance.pred_planes, p_instance.pred_masks.cpu())
-
             # get the frame with pred mask, bbox, axis
             # mask = p_instance.pred_masks.cpu().permute(1,2,0)[:,:,:1].numpy()
             # zero_mask = np.zeros((seg_pred.shape[0], seg_pred.shape[1], seg_pred.shape[2]))
@@ -267,6 +193,10 @@ def main():
             combined_vis = np.concatenate((seg_pred, normal_vis), axis=1)
             org_vis_list.append(combined_vis)
             seg_list.append(seg)
+            
+            # save 2D mask
+            # mask_num = str(i).zfill(4)
+            # np.save(f'{args.output}/Mask_{mask_num}', p_instance.pred_masks.cpu().numpy())
     if is_video:
         reader.close()
 
@@ -325,6 +255,9 @@ def main():
         else:
             frame_ids = ref_idx['rot']
             motion_type = 'rotation'
+
+        frame_ids = np.arange(len(frames))
+
         print("<================Cluster Info====================>")
         print(cluster)
         print("<================RSQ Value====================>")
@@ -332,10 +265,58 @@ def main():
         print("<================Reference ID====================>")
         print(ref_idx)
 
-        frame_ids = np.arange(len(frames))
+
+        pdb.set_trace()
         for frame_id in frame_ids:
             save_metric_output(args, opt_preds, frames, frame_id, motion_type)
-        # save_obj_model(args, opt_preds, frames, frame_ids)
+            # pdb.set_trace()
+    return
+
+
+
+def main():
+    random.seed(2020)
+    np.random.seed(2020)
+
+    # command line arguments
+    parser = argparse.ArgumentParser(
+        description="A script that generates results of articulation prediction."
+    )
+    parser.add_argument("--config", required=True, help="config/config.yaml")
+    parser.add_argument("--input", required=True, help="input video series name")
+    parser.add_argument("--output", required=True, help="output directory")
+    parser.add_argument('--save-obj', action='store_true')
+    parser.add_argument('--webvis', action='store_true')
+    parser.add_argument("--conf-threshold", default=0.7,
+                        type=float, help="confidence threshold")
+    args = parser.parse_args()
+
+    # create output directory
+    # os.makedirs(args.output, exist_ok=True)
+
+    # setup logger
+    logger = setup_logger()
+
+    # load model
+    cfg = get_cfg()
+    get_planercnn_cfg_defaults(cfg)
+    cfg.merge_from_file(args.config)
+    model = PlaneRCNN_Branch(cfg)
+    shortened_class_names = {'arti_rot': 'R', 'arti_tran': 'T'}
+    metadata = MetadataCatalog.get('arti_train')
+    cls_name_map = [shortened_class_names[cls]
+                    for cls in metadata.thing_classes]   
+
+    videos = open(args.input,'r').read().splitlines()
+
+    output_dir = args.output
+    for video in videos:
+        path = f"../dataset/{video.replace('_b', '/b', 1)}/frames/video.mp4"
+        args.output = f"{output_dir}/{video.replace('_b', '/b', 1)}"
+        os.makedirs(args.output, exist_ok=True)
+        get_single_video_results(args, path, model, metadata, cls_name_map)
+
+
 
 
 if __name__ == "__main__":

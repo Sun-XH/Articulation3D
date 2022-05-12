@@ -1,5 +1,6 @@
 import argparse
 import json
+from telnetlib import NAOHTD
 import numpy as np
 import os
 import torch
@@ -188,7 +189,13 @@ def create_instances(predictions, image_size, pred_planes=None, pred_rot_axis=No
         #raise e
         #pdb.set_trace()
         pass
-
+    # try:
+    #     # print(len(ret))
+    #     ret.angle = [None] * len(ret)
+    # except:
+    #     import pdb
+    #     pdb.set_trace()
+    
     #except KeyError:
     #    pass
     return ret

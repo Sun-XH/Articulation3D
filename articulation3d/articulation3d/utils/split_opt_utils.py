@@ -1,4 +1,3 @@
-
 import cv2
 import numpy as np
 import imageio
@@ -399,22 +398,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
             p_instance = preds[select_idx]
 
             # fetch rotation axis and pcd
-            pred_mask = p_instance.pred_masks[box_id]
-            pred_plane = p_instance.pred_planes[box_id:(box_id + 1)].clone()
-            pred_plane[:, [1, 2]] = pred_plane[:, [2, 1]]
-            pred_plane[:, 1] = - pred_plane[:, 1]
-            pred_box_centers = p_instance.pred_boxes.get_centers()
-            pts = angle_offset_to_axis(
-                p_instance.pred_rot_axis, pred_box_centers)
-            verts = pred_mask.nonzero().flip(1)
-            normal = F.normalize(pred_plane, p=2)[0]
-            offset = torch.norm(pred_plane, p=2)
-            verts_axis = pts[box_id].reshape(-1, 2)
-            verts_axis_3d = get_pcd(verts_axis, normal, offset)
-            dir_vec = verts_axis_3d[1] - verts_axis_3d[0]
-            dir_vec = dir_vec / np.linalg.norm(dir_vec)
-            pcd = get_pcd(verts, normal, offset)  # , focal_length)
-            pcd = pcd.float().cuda()
+            pcd, pred_mask, dir_vec, normal, verts_axis_3d, std_axis_pts = fetch_rot_axis_pcd(p_instance, box_id)
 
             # assign transformations
             t1 = pytorch3d.transforms.Transform3d().translate(
@@ -423,7 +407,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
             # angles = torch.FloatTensor(
             #     np.arange(-np.pi/2, 0.1, np.pi/30)[:, np.newaxis])
             angles = torch.FloatTensor(
-                np.arange(-np.pi/2, np.pi, np.pi/30)[:, np.newaxis]
+                np.arange(-np.pi, np.pi, np.pi/50)[:, np.newaxis]
             )
             axis_angles = angles * dir_vec
             rot_mats = pytorch3d.transforms.axis_angle_to_matrix(axis_angles)
@@ -482,11 +466,12 @@ def optimize_planes_3dc(preds, planes, frames=None):
                     pass
 
                 # if ious.max() > 0.5:
-                if ious.max() > 0.3:
+                if ious.max() > 0.5:
                     cluster_inliners.append(idx)
                     id_list.remove(idx)
                     cluster_angles.append(angle)
                     cluster_ious.append(ious.max().cpu().item())
+                
 
             cluster_angles = torch.FloatTensor(cluster_angles)
             cluster = {
@@ -498,37 +483,87 @@ def optimize_planes_3dc(preds, planes, frames=None):
             # print(cluster)
             clusters.append(cluster)
 
-        # split_clusters = []
-        # for cluster in clusters:
-        #     if abs(cluster['angles'][0] - cluster['angles'][-1]) < 0.1 & len(cluster['inliners']) > 3:
-        #         center = cluster['angles'].argmax()
-        #         split_cluster_open = {
-        #             'center_id': cluster['center_id'][:center],
-        #             'inliners': cluster['inliners'][:center],
-        #             'angles': cluster['angles'][:center],
-        #             'ious': cluster['ious'][:center]
-        #         }
-        #         split_clusters.append(split_cluster_open)
 
+        # pdb.set_trace()
+        split_clusters = []
+        split = False
+        for cluster in clusters:
+            # pdb.set_trace()
+            if (abs(cluster['angles'][0] - cluster['angles'][-1]).cpu().numpy() < 0.2) & (len(cluster['inliners']) > 3):
+                split = True
+                max_diff = max(cluster['angles']) - (cluster['angles'][0] + cluster['angles'][-1])/2
+                min_diff = min(cluster['angles']) - (cluster['angles'][0] + cluster['angles'][-1])/2
+                max_idx = cluster['angles'].argmax().cpu().numpy()
+                min_idx = cluster['angles'].argmin().cpu().numpy()
+
+                # find center frame to split the cluster
+                if abs(max_diff) > abs(min_diff):
+                    if len(cluster['inliners']) > 5 & (max_idx - 0) < 2:
+                        center = cluster['angles'][max_idx+1:].argmax()
+                    elif len(cluster['inliners']) > 5 & (len(cluster['inliners']) - max_idx) < 2:
+                        center = cluster['angles'][:max_idx].argmax()
+                    else:
+                        center = max_idx
+                else:
+                    if len(cluster['inliners']) > 5 & (min_idx - 0) < 2:
+                        center = cluster['angles'][min_idx+1:].argmin()
+                    elif len(cluster['inliners']) > 5 & (len(cluster['inliners']) - min_idx) < 2:
+                        center = cluster['angles'][:min_idx].argmin()
+                    else:
+                        center = min_idx
+
+                split_cluster_open = {
+                    'center_id': cluster['center_id'],
+                    'inliners': cluster['inliners'][:center],
+                    'angles': cluster['angles'][:center],
+                    'ious': cluster['ious'][:center]
+                }
+                split_clusters.append(split_cluster_open)
+
+                split_cluster_close = {
+                    'center_id': cluster['center_id'],
+                    'inliners': cluster['inliners'][center:],
+                    'angles': cluster['angles'][center:],
+                    'ious': cluster['ious'][center:]
+                }
+
+                split_clusters.append(split_cluster_close)
+            else:
+                split_clusters.append(cluster)
+    
+            # pdb.set_trace()
         # now we have all clusters
         # determine the dominant cluster
-        rsqs = []
-        for cluster in clusters:
-            # if len(cluster['inliners']) < 5:
-            if len(cluster['inliners']) < 3:
-                rsqs.append(0.0)
-                continue
+        if split == True:
+            rsqs = []
+            for cluster in split_clusters:
+                # if len(cluster['inliners']) < 5:
+                if len(cluster['inliners']) < 3:
+                    rsqs.append(0.0)
+                    continue
 
-            reg_results = linregress(
-                range(cluster['angles'].shape[0]), cluster['angles'])
+                reg_results = linregress(
+                    range(cluster['angles'].shape[0]), cluster['angles'])
 
-            rsq = reg_results.rvalue ** 2
-            rsqs.append(rsq)
+                rsq = reg_results.rvalue ** 2
+                rsqs.append(rsq)
 
-        rsqs = np.array(rsqs)
+            rsqs = np.array(rsqs)
+        else:
+            rsqs = []
+            for cluster in split_clusters:
+                # if len(cluster['inliners']) < 5:
+                if len(cluster['inliners']) < 3:
+                    rsqs.append(0.0)
+                    continue
 
-        # import pdb
-        # pdb.set_trace()
+                reg_results = linregress(
+                    range(cluster['angles'].shape[0]), cluster['angles'])
+
+                rsq = reg_results.rvalue ** 2
+                rsqs.append(rsq)
+
+            rsqs = np.array(rsqs)
 
         # if rsqs.max() < 0:  # impossible
         if rsqs.max() < 0.3:
@@ -540,32 +575,19 @@ def optimize_planes_3dc(preds, planes, frames=None):
 
         # then determine the regularized mask and rot axis
         try:
-            final_cluster = clusters[rsqs.argmax()]
+            final_cluster = split_clusters[rsqs.argmax()]
         except:
             pdb.set_trace()
             pass
+
         select_idx = final_cluster['center_id']
         box_id = plane['ids'][select_idx]
         p_instance = preds[select_idx]
         std_axis = p_instance.pred_rot_axis[box_id]
 
         # fetch rotation axis and pcd
-        pred_mask = p_instance.pred_masks[box_id]
-        pred_plane = p_instance.pred_planes[box_id:(box_id + 1)].clone()
-        pred_plane[:, [1, 2]] = pred_plane[:, [2, 1]]
-        pred_plane[:, 1] = - pred_plane[:, 1]
-        pred_box_centers = p_instance.pred_boxes.get_centers()
-        pts = angle_offset_to_axis(p_instance.pred_rot_axis, pred_box_centers)
-        std_axis_pts = pts[box_id]
-        verts = pred_mask.nonzero().flip(1)
-        normal = F.normalize(pred_plane, p=2)[0]
-        offset = torch.norm(pred_plane, p=2)
-        verts_axis = pts[box_id].reshape(-1, 2)
-        verts_axis_3d = get_pcd(verts_axis, normal, offset)
-        dir_vec = verts_axis_3d[1] - verts_axis_3d[0]
-        dir_vec = dir_vec / np.linalg.norm(dir_vec)
-        pcd = get_pcd(verts, normal, offset)  # , focal_length)
-        pcd = pcd.float().cuda()
+        pcd, pred_mask, dir_vec, normal, verts_axis_3d, std_axis_pts = fetch_rot_axis_pcd(p_instance, box_id)
+
 
         # assign transformations
         t1 = pytorch3d.transforms.Transform3d().translate(
@@ -612,9 +634,11 @@ def optimize_planes_3dc(preds, planes, frames=None):
             proj_masks.append(proj_mask)
 
         proj_masks = torch.cat(proj_masks)
+        
 
         plane['reg_masks'] = {}
         plane['reg_normals'] = {}
+        plane['angle'] = {}
         for idx in plane['ids']:
             box_id = plane['ids'][idx]
             p_instance = preds[idx]
@@ -636,6 +660,8 @@ def optimize_planes_3dc(preds, planes, frames=None):
             reg_normal[1] = - reg_normal[1]
             reg_normal[[1, 2]] = reg_normal[[2, 1]]
             plane['reg_normals'][idx] = reg_normal
+
+            plane['angle'][idx] = angles[angle_id]
 
         plane['std_axis'] = std_axis_pts
 
@@ -697,6 +723,12 @@ def optimize_planes_3dc(preds, planes, frames=None):
         new_instance.pred_tran_axis = p_instance.pred_tran_axis
         new_instance.pred_masks = p_instance.pred_masks
         new_instance.pred_classes = p_instance.pred_classes
+        # assert len(new_instance) == 1
+        # pdb.set_trace()
+        # try:
+        #     new_instance.angle = [plane['angle'][idx]]
+        # except:
+        #     new_instance.angle = [None]
 
         opt_preds.append(new_instance)
 
@@ -709,12 +741,12 @@ def optimize_planes_3dc(preds, planes, frames=None):
     #         'final_selection' : select_idx
     #     }
     if planes != []:
-        return opt_preds, clusters, rsqs, select_idx
+        return opt_preds, split_clusters, rsqs, select_idx
     else:
-        clusters = []
+        split_clusters = []
         rsqs = []
         select_idx = []
-        return opt_preds, clusters, rsqs, select_idx
+        return opt_preds, split_clusters, rsqs, select_idx
 
 
 def optimize_planes_3d_trans(preds, planes, frames=None):
@@ -828,30 +860,85 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
 
             clusters.append(cluster)
 
+        split_clusters = []
+        split = False
+        for cluster in clusters:
+
+            if (abs(cluster['angles'][0] - cluster['angles'][-1]).cpu().numpy() < 0.2) & (len(cluster['inliners']) > 3):
+                split = True
+                max_diff = max(cluster['angles']) - (cluster['angles'][0] + cluster['angles'][-1])/2
+                min_diff = min(cluster['angles']) - (cluster['angles'][0] + cluster['angles'][-1])/2
+                max_idx = cluster['angles'].argmax().cpu().numpy()
+                min_idx = cluster['angles'].argmin().cpu().numpy()
+
+                # find center frame to split the cluster
+                if abs(max_diff) > abs(min_diff):
+                    if len(cluster['inliners']) > 5 & (max_idx - 0) < 2:
+                        center = cluster['angles'][max_idx+1:].argmax()
+                    elif len(cluster['inliners']) > 5 & (len(cluster['inliners']) - max_idx) < 2:
+                        center = cluster['angles'][:max_idx].argmax()
+                    else:
+                        center = max_idx
+                else:
+                    if len(cluster['inliners']) > 5 & (min_idx - 0) < 2:
+                        center = cluster['angles'][min_idx+1:].argmin()
+                    elif len(cluster['inliners']) > 5 & (len(cluster['inliners']) - min_idx) < 2:
+                        center = cluster['angles'][:min_idx].argmin()
+                    else:
+                        center = min_idx
+
+                split_cluster_open = {
+                    'center_id': cluster['center_id'],
+                    'inliners': cluster['inliners'][:center],
+                    'angles': cluster['angles'][:center],
+                    'ious': cluster['ious'][:center]
+                }
+                split_clusters.append(split_cluster_open)
+
+                split_cluster_close = {
+                    'center_id': cluster['center_id'],
+                    'inliners': cluster['inliners'][center:],
+                    'angles': cluster['angles'][center:],
+                    'ious': cluster['ious'][center:]
+                }
+
+                split_clusters.append(split_cluster_close)
+            else:
+                split_clusters.append(cluster)
+
+
         # now we have all clusters
         # determine the dominant cluster
-        rsqs = []
-        for cluster in clusters:
-            if len(cluster['inliners']) < 5:
-                rsqs.append(0.0)
-                continue
-            reg_results = linregress(
-                range(cluster['angles'].shape[0]), cluster['angles'])
+        if split == True:
+            rsqs = []
+            for cluster in split_clusters:
+                # if len(cluster['inliners']) < 5:
+                if len(cluster['inliners']) < 3:
+                    rsqs.append(0.0)
+                    continue
 
-            rsq = reg_results.rvalue ** 2
-            # if reg_results.slope < 0.01:
-            #    rsq = 0.0
-            # else:
-            #    rsq = reg_results.rvalue ** 2
-            rsqs.append(rsq)
+                reg_results = linregress(
+                    range(cluster['angles'].shape[0]), cluster['angles'])
 
-        # cluster_cnts = np.array([len(cluster['inliners']) for cluster in clusters])
-        # cluster_id = cluster_cnts.argmax()
-        # final_cluster = clusters[cluster_id]
+                rsq = reg_results.rvalue ** 2
+                rsqs.append(rsq)
 
-        # from the cluster, infer the articulation model
-        # reg_results = linregress(range(final_cluster['angles'].shape[0]), final_cluster['angles'])
-        rsqs = np.array(rsqs)
+            rsqs = np.array(rsqs)
+        else:
+            rsqs = []
+            for cluster in split_clusters:
+                # if len(cluster['inliners']) < 5:
+                if len(cluster['inliners']) < 3:
+                    rsqs.append(0.0)
+                    continue
+
+                reg_results = linregress(
+                    range(cluster['angles'].shape[0]), cluster['angles'])
+
+                rsq = reg_results.rvalue ** 2
+                rsqs.append(rsq)
+
+            rsqs = np.array(rsqs)
 
         # pdb.set_trace()
 
@@ -873,7 +960,7 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
         p_instance = preds[select_idx]
         std_axis = p_instance.pred_tran_axis[box_id]
 
-        # fetch rotation axis and pcd
+        # fetch translation axis and pcd
         pred_mask = p_instance.pred_masks[box_id]
         pred_plane = p_instance.pred_planes[box_id:(box_id + 1)].clone()
         pred_plane[:, [1, 2]] = pred_plane[:, [2, 1]]
@@ -988,6 +1075,8 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
         new_instance.pred_tran_axis = p_instance.pred_tran_axis
         new_instance.pred_masks = p_instance.pred_masks
         new_instance.pred_classes = p_instance.pred_classes
+        # assert len(new_instance) == 1
+
 
         opt_preds.append(new_instance)
 
@@ -1205,6 +1294,28 @@ def check_monotonic(preds, opt_preds, planes, method, frames=None):
         opt_corrs.append([opt_fit_scores])
 
     return corrs, opt_corrs
+
+
+def fetch_rot_axis_pcd(p_instance, box_id):
+    pred_mask = p_instance.pred_masks[box_id]
+    pred_plane = p_instance.pred_planes[box_id:(box_id + 1)].clone()
+    pred_plane[:, [1, 2]] = pred_plane[:, [2, 1]]
+    pred_plane[:, 1] = - pred_plane[:, 1]
+    pred_box_centers = p_instance.pred_boxes.get_centers()
+    pts = angle_offset_to_axis(
+        p_instance.pred_rot_axis, pred_box_centers)
+    std_axis_pts = pts[box_id]
+    verts = pred_mask.nonzero().flip(1)
+    normal = F.normalize(pred_plane, p=2)[0]
+    offset = torch.norm(pred_plane, p=2)
+    verts_axis = pts[box_id].reshape(-1, 2)
+    verts_axis_3d = get_pcd(verts_axis, normal, offset)
+    dir_vec = verts_axis_3d[1] - verts_axis_3d[0]
+    dir_vec = dir_vec / np.linalg.norm(dir_vec)
+    pcd = get_pcd(verts, normal, offset)  # , focal_length)
+    pcd = pcd.float().cuda()
+
+    return pcd, pred_mask, dir_vec, normal, verts_axis_3d, std_axis_pts
 
 
 def track_planes(preds):
