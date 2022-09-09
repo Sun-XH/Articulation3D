@@ -1,5 +1,6 @@
 
 import cv2
+from cv2 import exp
 import numpy as np
 import imageio
 import os
@@ -385,7 +386,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
     for plane in planes:
         # best_idx = -1
         # min_mean_loss = 100000
-
+        # pdb.set_trace()
         id_list = list(plane['ids'].keys())
 
         clusters = []
@@ -481,8 +482,8 @@ def optimize_planes_3dc(preds, planes, frames=None):
                     pdb.set_trace()
                     pass
 
-                # if ious.max() > 0.5:
-                if ious.max() > 0.3:
+                if ious.max() > 0.5:
+                # if ious.max() > 0.3:
                     cluster_inliners.append(idx)
                     id_list.remove(idx)
                     cluster_angles.append(angle)
@@ -549,6 +550,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
         p_instance = preds[select_idx]
         std_axis = p_instance.pred_rot_axis[box_id]
 
+        # pdb.set_trace()
         # fetch rotation axis and pcd
         pred_mask = p_instance.pred_masks[box_id]
         pred_plane = p_instance.pred_planes[box_id:(box_id + 1)].clone()
@@ -590,7 +592,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
         # pdb.set_trace()
         normal_trans = trans.transform_normals(
             normal.cuda().unsqueeze(0))[:, 0]
-
+        # pdb.set_trace()
         # project pcd to 2d space
         proj_masks = []
         for i in range(pcd_trans.shape[0]):
@@ -615,6 +617,8 @@ def optimize_planes_3dc(preds, planes, frames=None):
 
         plane['reg_masks'] = {}
         plane['reg_normals'] = {}
+        plane['angles'] = {}
+        # pdb.set_trace()
         for idx in plane['ids']:
             box_id = plane['ids'][idx]
             p_instance = preds[idx]
@@ -630,6 +634,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
             angle_id = ious.argmax()
 
             plane['reg_masks'][idx] = proj_masks[angle_id].cpu()
+            plane['angles'][idx] = angles[angle_id]
 
             # transform back normals
             reg_normal = normal_trans[angle_id].cpu()
@@ -639,6 +644,8 @@ def optimize_planes_3dc(preds, planes, frames=None):
 
         plane['std_axis'] = std_axis_pts
 
+    # pdb.set_trace()
+    # pdb.set_trace()
     opt_preds = []
     for idx, p_instance in enumerate(preds):
         pred_boxes = p_instance.pred_boxes
@@ -670,6 +677,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
             )
             p_instance.pred_rot_axis[box_id] = std_axis[0, :3]
 
+            # pdb.set_trace()
             if plane['reg_normals'][idx] is not None:
                 p_instance.pred_planes[box_id] = plane['reg_normals'][idx]
             #    import pdb
@@ -699,6 +707,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
         new_instance.pred_classes = p_instance.pred_classes
 
         opt_preds.append(new_instance)
+    # pdb.set_trace()
 
     # output_value = {
     #         'select_frame_id' : cluster['center_id'],
@@ -709,12 +718,17 @@ def optimize_planes_3dc(preds, planes, frames=None):
     #         'final_selection' : select_idx
     #     }
     if planes != []:
-        return opt_preds, clusters, rsqs, select_idx
+        try:
+            return opt_preds, clusters, rsqs, select_idx, plane['angles']
+        except:
+            angles = []
+            return opt_preds, clusters, rsqs, select_idx, angles
     else:
         clusters = []
         rsqs = []
         select_idx = []
-        return opt_preds, clusters, rsqs, select_idx
+        angles = []
+        return opt_preds, clusters, rsqs, select_idx, angles
 
 
 def optimize_planes_3d_trans(preds, planes, frames=None):
@@ -924,6 +938,7 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
         proj_masks = torch.cat(proj_masks)
 
         plane['reg_masks'] = {}
+        plane['angles'] = {}
         for idx in plane['ids']:
             box_id = plane['ids'][idx]
             p_instance = preds[idx]
@@ -937,6 +952,7 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
             un = un.sum(2).sum(1)
             ious = intersec / un
             angle_id = ious.argmax()
+            plane['angles'][idx] = angles[angle_id]
 
             plane['reg_masks'][idx] = proj_masks[angle_id].cpu()
 
@@ -964,14 +980,14 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
                 continue
             chosen[box_id] = True
             p_instance.pred_tran_axis[box_id] = plane['std_axis']
-            continue
+            # continue
             if plane['reg_masks'][idx] is not None:
                 p_instance.pred_masks[box_id] = plane['reg_masks'][idx]
                 # bbox
-                # mask = GenericMask(plane['reg_masks'][idx].numpy(), 480, 640)
-                # box_tensor = p_instance.pred_boxes.tensor
-                # box_tensor[box_id] = torch.FloatTensor(mask.bbox())
-                # p_instance.pred_boxes = Boxes(box_tensor)
+                mask = GenericMask(plane['reg_masks'][idx].numpy(), 480, 640)
+                box_tensor = p_instance.pred_boxes.tensor
+                box_tensor[box_id] = torch.FloatTensor(mask.bbox())
+                p_instance.pred_boxes = Boxes(box_tensor)
 
         chosen = np.array(chosen, dtype=bool)
         no_chosen = np.logical_not(chosen)
@@ -992,12 +1008,17 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
         opt_preds.append(new_instance)
 
     if planes != []:
-        return opt_preds, clusters, rsqs, select_idx
+        try:
+            return opt_preds, clusters, rsqs, select_idx, plane['angles']
+        except:
+            angles = []
+            return opt_preds, clusters, rsqs, select_idx, angles
     else:
         clusters = []
         rsqs = []
         select_idx = []
-        return opt_preds, clusters, rsqs, select_idx
+        angles = []
+        return opt_preds, clusters, rsqs, select_idx, angles
 
 
 def optimize_planes(preds, planes, method, frames=None):
@@ -1007,9 +1028,9 @@ def optimize_planes(preds, planes, method, frames=None):
         return optimize_planes_3d(preds, planes)
     elif method == '3dc':
         # check_monotonic(preds, planes['rot'], 'debug', frames=frames)
-        opt_preds, clusters_trans, rsqs_trans, select_idx_trans = optimize_planes_3d_trans(
+        opt_preds, clusters_trans, rsqs_trans, select_idx_trans, angles_trans = optimize_planes_3d_trans(
             preds, planes['trans'], frames=frames)
-        opt_preds_2, clusters_rot, rsqs_rot, select_idx_rot = optimize_planes_3dc(
+        opt_preds_2, clusters_rot, rsqs_rot, select_idx_rot, angles_rot = optimize_planes_3dc(
             opt_preds, planes['rot'], frames=frames)
         # pdb.set_trace()
         cluster = {
@@ -1024,7 +1045,11 @@ def optimize_planes(preds, planes, method, frames=None):
             'trans': select_idx_trans,
             'rot': select_idx_rot
         }
-        return opt_preds_2, cluster, rsq, ref_idx
+        angles = {
+            'trans' : angles_trans,
+            'rot' : angles_rot
+        }
+        return opt_preds_2, cluster, rsq, ref_idx, angles
     else:
         raise NotImplementedError
 

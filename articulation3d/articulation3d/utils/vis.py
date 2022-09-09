@@ -1,3 +1,4 @@
+from os import stat
 import numpy as np
 import mapbox_earcut as earcut
 import torch
@@ -59,7 +60,8 @@ def precompute_K_inv_dot_xy_1(h=480, w=640):
         return K_inv_dot_xy_1
 
 
-def project2D(pcd,h=480,w=640,focal_length=368.635):
+def project2D(pcd,h=480,w=640,focal_length=517.97):
+# def project2D(pcd,h=480,w=640,focal_length=368.635):
     #pcd is Nx3
     offset_x = w/2
     offset_y = h/2
@@ -81,7 +83,7 @@ def project2D(pcd,h=480,w=640,focal_length=368.635):
 
 
     
-def get_pcd(verts, normal, offset, h=480, w=640, focal_length=368.635):
+def get_pcd(verts, normal, offset, h=480, w=640, focal_length=517.97, status=False):
     """
     convert 2d verts to 3d point cloud based on plane normal and offset
     depth = offset / n \dot K^{-1}q
@@ -91,12 +93,18 @@ def get_pcd(verts, normal, offset, h=480, w=640, focal_length=368.635):
     K = [[focal_length, 0, offset_x],
         [0, focal_length, offset_y],
         [0, 0, 1]]
+    # pdb.set_trace()
     K_inv = np.linalg.inv(np.array(K))
     homogeneous = np.hstack((verts, np.ones(len(verts)).reshape(-1,1)))
 
     ray = K_inv@homogeneous.T
     depth = offset / np.dot(normal, ray)
+    # pdb.set_trace()
     pcd = depth.reshape(-1,1) * ray.T
+    if status:
+        pdb.set_trace()
+    # pcd[:, 0] = - pcd[:, 0]
+    # pcd[:, 2] = - pcd[:, 2]
     return pcd
 
 
@@ -129,7 +137,7 @@ def rle2polygon(segmentations):
     return poly_masks
 
 
-def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=480, width=640, focal_length=571.623718, webvis=False, reduce_size=True):
+def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=480, width=640, focal_length=517.97, webvis=False, reduce_size=True):
     plane_params = np.array(plane_params)
     plane_params[:, [1,2]] = plane_params[:, [2, 1]]
     plane_params[:, 1] = -plane_params[:, 1]
@@ -170,7 +178,7 @@ def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=48
         #####DF#####
         #pick an arbitrary point
         # get 3d pointcloud
-        tmp_pcd = get_pcd(tmp_verts, normal, offset, focal_length)  
+        tmp_pcd = get_pcd(tmp_verts, normal, offset, focal_length=focal_length)  
         point0 = tmp_pcd[0,:]
         #pick the furthest point from here
         dPoint0 = np.sum((tmp_pcd-point0[np.newaxis,:])**2,axis=1)
@@ -210,7 +218,7 @@ def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=48
         for ring_idx, ring in enumerate(segm):
             verts = np.array(ring).reshape(-1,2)
             # get 3d pointcloud
-            pcd = get_pcd(verts, normal, offset, focal_length)            
+            pcd = get_pcd(verts, normal, offset, focal_length=focal_length)            
 
             if webvis:
                 # Rotate by 11 degree around x axis to push things on the ground.
@@ -256,14 +264,15 @@ def get_single_image_mesh_plane(plane_params, segmentations, img_file, height=48
     return meshes, uv_maps
 
 
-def get_single_image_mesh_arti(plane_params, segmentations, img, height=480, width=640, focal_length=571.623718, webvis=False, reduce_size=True):
+# def get_single_image_mesh_arti(plane_params, segmentations, img, height=480, width=640, focal_length=571.623718, webvis=False, reduce_size=True):
+def get_single_image_mesh_arti(plane_params, segmentations, img, height=480, width=640, focal_length=517.97, webvis=False, reduce_size=True):
     plane_params = np.array(plane_params)
     plane_params[:, [1,2]] = plane_params[:, [2, 1]]
     plane_params[:, 1] = -plane_params[:, 1]
     offsets = np.linalg.norm(plane_params, ord=2, axis=1)
     norms = plane_params / offsets.reshape(-1,1)
 
-    #pdb.set_trace()
+    # pdb.set_trace()
 
     poly_segmentations = []
     for i in range(segmentations.shape[0]):
@@ -301,7 +310,7 @@ def get_single_image_mesh_arti(plane_params, segmentations, img, height=480, wid
         #####DF#####
         #pick an arbitrary point
         # get 3d pointcloud
-        tmp_pcd = get_pcd(tmp_verts, normal, offset, focal_length)  
+        tmp_pcd = get_pcd(tmp_verts, normal, offset, focal_length=focal_length)  
         point0 = tmp_pcd[0,:]
         #pick the furthest point from here
         dPoint0 = np.sum((tmp_pcd-point0[np.newaxis,:])**2,axis=1)
@@ -315,7 +324,7 @@ def get_single_image_mesh_arti(plane_params, segmentations, img, height=480, wid
         #control points in 3D 
         control3D = [point0, point0+dir1, point0+dir2, point0+dir1+dir2]
         control3D = np.vstack([p[None,:] for p in control3D])
-        control3DProject = project2D(control3D, focal_length)
+        control3DProject = project2D(control3D, focal_length=focal_length)
 
         #pick an arbitrary square
         targetSize = 300
@@ -341,13 +350,15 @@ def get_single_image_mesh_arti(plane_params, segmentations, img, height=480, wid
         for ring_idx, ring in enumerate(segm):
             verts = np.array(ring).reshape(-1,2)
             # get 3d pointcloud
-            pcd = get_pcd(verts, normal, offset, focal_length)            
-
+            pcd = get_pcd(verts, normal, offset, focal_length=focal_length)            
+            # pdb.set_trace()
             if webvis:
                 # Rotate by 11 degree around x axis to push things on the ground.
                 # pcd = (np.array([[-1,0,0], [0,1,0], [0,0,-1]])@np.array([[1,0,0],[0,0.9816272,-0.1908090],[0,0.1908090,0.9816272]])@np.array([[-1,0,0],[0,-1,0],[0,0,1]])@pcd.T).T
                 pcd = (np.array([[-1,0,0], [0,1,0], [0,0,-1]])@np.array([[-1,0,0],[0,-1,0],[0,0,1]])@pcd.T).T
+
             #####DF#####
+            # pdb.set_trace()
             uvsPoly = np.array([0,1]) + np.array([1,-1])*verts/np.array([width, height])
             uvsRectified = cv2.perspectiveTransform(verts.astype(np.float32).reshape(1,-1,2),HUse)[0,:,:]
             uvsRectified = np.array([0,1]) + np.array([1,-1])*uvsRectified/np.array([targetSize, targetSize])

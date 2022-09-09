@@ -665,6 +665,7 @@ def optimize_planes_3dc(preds, planes, frames=None):
 
         plane['std_axis'] = std_axis_pts
 
+
     opt_preds = []
     for idx, p_instance in enumerate(preds):
         pred_boxes = p_instance.pred_boxes
@@ -1010,6 +1011,8 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
 
         proj_masks = torch.cat(proj_masks)
 
+        # pdb.set_trace()
+
         plane['reg_masks'] = {}
         for idx in plane['ids']:
             box_id = plane['ids'][idx]
@@ -1051,14 +1054,14 @@ def optimize_planes_3d_trans(preds, planes, frames=None):
                 continue
             chosen[box_id] = True
             p_instance.pred_tran_axis[box_id] = plane['std_axis']
-            continue
+            # continue
             if plane['reg_masks'][idx] is not None:
                 p_instance.pred_masks[box_id] = plane['reg_masks'][idx]
                 # bbox
-                # mask = GenericMask(plane['reg_masks'][idx].numpy(), 480, 640)
-                # box_tensor = p_instance.pred_boxes.tensor
-                # box_tensor[box_id] = torch.FloatTensor(mask.bbox())
-                # p_instance.pred_boxes = Boxes(box_tensor)
+                mask = GenericMask(plane['reg_masks'][idx].numpy(), 480, 640)
+                box_tensor = p_instance.pred_boxes.tensor
+                box_tensor[box_id] = torch.FloatTensor(mask.bbox())
+                p_instance.pred_boxes = Boxes(box_tensor)
 
         chosen = np.array(chosen, dtype=bool)
         no_chosen = np.logical_not(chosen)
